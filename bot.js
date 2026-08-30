@@ -5,52 +5,71 @@ const parser = require('./parser');
 function createBot(token) {
     const bot = new Telegraf(token);
 
-    // === /start ===
+    const menuBtn = () => [Markup.button.callback('🏠 В меню', 'menu')];
+
+    function mainMenuKeyboardFor(chatId) {
+        const user = storage.getUser(chatId);
+        return Markup.inlineKeyboard([
+            [Markup.button.callback('📱 Фильтры', 'filters')],
+            [Markup.button.callback(
+                user?.monitoring ? '⏹ Остановить мониторинг' : '▶️ Запустить мониторинг',
+                user?.monitoring ? 'stop_monitoring' : 'start_monitoring'
+            )],
+        ]);
+    }
+
     bot.start((ctx) => {
         const chatId = ctx.chat.id;
         storage.createUser(chatId);
         ctx.reply(
-            'Добро пожаловать в KufarParser!\n\n' +
-            'Этот бот мониторит объявления на kufar.by\n' +
+            '📱 KufarParser — Мобильные телефоны\n\n' +
+            'Бот мониторит объявления мобильных телефонов на kufar.by\n' +
             'и отправляет уведомления о новых.',
-            mainMenuKeyboard()
+            mainMenuKeyboardFor(chatId)
         );
     });
 
-    // === /menu — главное меню ===
-    bot.command('/menu', (ctx) => {
-        ctx.reply('Главное меню:', mainMenuKeyboard());
+    bot.command('start', (ctx) => {
+        const chatId = ctx.chat.id;
+        storage.createUser(chatId);
+        ctx.reply(
+            '📱 KufarParser — Мобильные телефоны\n\n' +
+            'Бот мониторит объявления мобильных телефонов на kufar.by\n' +
+            'и отправляет уведомления о новых.',
+            mainMenuKeyboardFor(chatId)
+        );
     });
 
-    // === /help ===
-    bot.command('/help', (ctx) => {
+    bot.command('menu', (ctx) => {
+        const chatId = ctx.chat.id;
+        storage.createUser(chatId);
+        ctx.reply('Главное меню:', mainMenuKeyboardFor(chatId));
+    });
+
+    bot.command('help', (ctx) => {
         ctx.reply(
             'Команды:\n' +
             '/menu — главное меню\n' +
             '/status — текущий статус\n' +
             '/help — эта справка\n\n' +
-            'Используйте кнопки для навигации.',
-            mainMenuKeyboard()
+            'Используйте кнопки для навигации.'
         );
     });
 
-    // === /status ===
-    bot.command('/status', (ctx) => {
+    bot.command('status', (ctx) => {
         const chatId = ctx.chat.id;
         const user = storage.createUser(chatId);
         const knownAds = storage.loadAds(chatId);
         const adsCount = Object.keys(knownAds).length;
 
-        ctx.reply(
-            'Статус:\n\n' +
-            `URL: ${user.url || 'не задан'}\n` +
-            `Мониторинг: ${user.monitoring ? 'активен' : 'остановлен'}\n` +
-            `Объявлений в кэше: ${adsCount}`,
-            mainMenuKeyboard()
-        );
+        let text = '📊 Статус:\n\n';
+        text += `Мониторинг: ${user.monitoring ? '✅ активен' : '⛔ остановлен'}\n`;
+        if (user.url) text += `URL: ${user.url}\n`;
+        text += `Объявлений в кэше: ${adsCount}\n`;
+
+        ctx.reply(text, mainMenuKeyboardFor(chatId));
     });
 
-    // === Callback queries (inline buttons) ===
     bot.on('callback_query', async (ctx) => {
         const chatId = ctx.chat.id;
         const data = ctx.callbackQuery.data;
@@ -60,22 +79,87 @@ function createBot(token) {
             await ctx.answerCbQuery();
 
             if (data === 'menu') {
-                await ctx.editMessageText('Главное меню:', mainMenuKeyboard());
+                await ctx.reply('Главное меню:', mainMenuKeyboardFor(chatId));
                 return;
             }
 
-            if (data === 'categories') {
-                await handleCategories(ctx, chatId);
+            if (data === 'filters') {
+                await sendFiltersSummary(ctx, chatId);
                 return;
             }
 
-            if (data === 'my_filters') {
-                await handleMyFilters(ctx, chatId);
+            if (data === 'select_brand') {
+                await handleSelectBrand(ctx, chatId);
                 return;
             }
 
-            if (data === 'monitoring') {
-                await handleMonitoring(ctx, chatId);
+            if (data.startsWith('brand:')) {
+                await handleBrandSelected(ctx, chatId, data.slice(6));
+                return;
+            }
+
+            if (data === 'select_model') {
+                await handleSelectModel(ctx, chatId);
+                return;
+            }
+
+            if (data.startsWith('model:')) {
+                await handleModelToggled(ctx, chatId, data.slice(6));
+                return;
+            }
+
+            if (data === 'set_price') {
+                await handleSetPrice(ctx, chatId);
+                return;
+            }
+
+            if (data === 'clear_price') {
+                const session = storage.getSession(chatId);
+                session.priceFrom = null;
+                session.priceTo = null;
+                await sendFiltersSummary(ctx, chatId);
+                return;
+            }
+
+            if (data === 'rgn_list') {
+                await handleRegionList(ctx, chatId);
+                return;
+            }
+
+            if (data.startsWith('rgn_toggle:')) {
+                await handleRegionToggle(ctx, chatId, parseInt(data.slice(11), 10));
+                return;
+            }
+
+            if (data.startsWith('rgn_cities:')) {
+                await handleRegionCities(ctx, chatId, parseInt(data.slice(11), 10));
+                return;
+            }
+
+            if (data.startsWith('ar_toggle:')) {
+                const parts = data.slice(10).split(':');
+                await handleAreaToggled(ctx, chatId, parseInt(parts[0], 10), parseInt(parts[1], 10));
+                return;
+            }
+
+            if (data === 'rgn_back') {
+                await handleRegionList(ctx, chatId);
+                return;
+            }
+
+            if (data === 'rgn_all') {
+                await handleRegionAll(ctx, chatId);
+                return;
+            }
+
+            if (data === 'build_url') {
+                await handleBuildUrl(ctx, chatId);
+                return;
+            }
+
+            if (data === 'reset_filters') {
+                storage.resetSession(chatId);
+                await sendFiltersSummary(ctx, chatId);
                 return;
             }
 
@@ -85,280 +169,453 @@ function createBot(token) {
             }
 
             if (data === 'stop_monitoring') {
-                await handleStopMonitoring(ctx, chatId);
-                return;
-            }
-
-            if (data.startsWith('cat:')) {
-                await handleCategorySelected(ctx, chatId, data.slice(4));
-                return;
-            }
-
-            if (data.startsWith('filter:')) {
-                await handleFilterToggled(ctx, chatId, data.slice(7));
-                return;
-            }
-
-            if (data === 'filters_done') {
-                await handleFiltersDone(ctx, chatId);
-                return;
-            }
-
-            if (data === 'filters_reset') {
-                await handleFiltersReset(ctx, chatId);
-                return;
-            }
-
-            if (data === 'confirm_url') {
-                await handleConfirmUrl(ctx, chatId);
-                return;
-            }
-
-            if (data === 'back_to_categories') {
-                await handleCategories(ctx, chatId);
-                return;
-            }
-
-            if (data === 'back_to_menu') {
-                await ctx.editMessageText('Главное меню:', mainMenuKeyboard());
+                storage.updateUser(chatId, { monitoring: false });
+                await ctx.reply('⏹ Мониторинг остановлен.', mainMenuKeyboardFor(chatId));
                 return;
             }
 
         } catch (error) {
             console.error(`[Bot] Ошибка callback: ${error.message}`);
-            await ctx.reply('Произошла ошибка. Попробуйте снова.', mainMenuKeyboard());
+            ctx.reply('Произошла ошибка. Попробуйте /menu.', mainMenuKeyboardFor(chatId));
         }
     });
 
-    // === Обработчики кнопок ===
+    bot.on('text', async (ctx) => {
+        const chatId = ctx.chat.id;
+        const session = storage.getSession(chatId);
+        const text = ctx.message.text.trim();
 
-    async function handleCategories(ctx, chatId) {
-        await ctx.editMessageText('Загрузка категорий...');
-
-        const categories = await parser.getCategories();
-
-        if (!categories || categories.length === 0) {
-            await ctx.editMessageText(
-                'Не удалось загрузить категории.\nПопробуйте позже.',
-                mainMenuKeyboard()
-            );
+        if (session.waitingFor === 'price_from') {
+            const val = parseInt(text.replace(/\D/g, ''), 10);
+            if (!isNaN(val) && val >= 0) {
+                session.priceFrom = val;
+                session.waitingFor = 'price_to';
+                ctx.reply('💰 Максимальная цена (или отправьте "0" для пропуска):');
+            } else {
+                ctx.reply('Введите число или "0" для пропуска:');
+            }
             return;
         }
 
-        const keyboard = Markup.inlineKeyboard(
-            [
-                ...categories.map(c => [
-                    Markup.button.callback(c.name, `cat:${c.slug}`)
-                ]),
-                [Markup.button.callback('← Назад', 'back_to_menu')],
-            ]
-        );
+        if (session.waitingFor === 'price_to') {
+            if (text === '0' || text === '-' || text.toLowerCase() === 'пропустить') {
+                session.priceTo = null;
+            } else {
+                const val = parseInt(text.replace(/\D/g, ''), 10);
+                if (!isNaN(val) && val >= 0) {
+                    session.priceTo = val;
+                }
+            }
+            session.waitingFor = null;
+            await sendFiltersSummary(ctx, chatId);
+            return;
+        }
+    });
 
-        await ctx.editMessageText('Выберите категорию:', keyboard);
-    }
+    // === Фильтры: сводка ===
 
-    async function handleCategorySelected(ctx, chatId, slug) {
-        const session = storage.updateSession(chatId, {
-            selectedCategory: slug,
-            selectedFilters: {},
-            step: 'filters',
-        });
-
-        await ctx.editMessageText(`Загрузка фильтров для "${slug}"...`);
-
-        const categoryUrl = `https://www.kufar.by/l/${slug}`;
-        const filters = await parser.getFilters(categoryUrl);
-
-        const keyboard = buildFilterKeyboard(filters, session.selectedFilters);
-
-        await ctx.editMessageText(
-            `Категория: ${slug}\n\nВыберите фильтры (нажимайте для выбора/отмены):`,
-            keyboard
-        );
-    }
-
-    async function handleFilterToggled(ctx, chatId, filterKey) {
+    async function sendFiltersSummary(ctx, chatId) {
         const session = storage.getSession(chatId);
-        const [type, value] = filterKey.split('|');
+        const lines = [];
 
-        if (!session.selectedFilters[type]) {
-            session.selectedFilters[type] = [];
+        if (session.brandName) lines.push(`📱 Бренд: ${session.brandName}`);
+        if (session.modelNames && session.modelNames.length > 0) {
+            lines.push(`📋 Модели: ${session.modelNames.join(', ')}`);
         }
 
-        const arr = session.selectedFilters[type];
-        const idx = arr.indexOf(value);
-        if (idx >= 0) {
-            arr.splice(idx, 1);
+        const regionSummary = buildRegionSummary(session);
+        if (regionSummary) lines.push(`📍 Регион: ${regionSummary}`);
+
+        if (session.priceFrom || session.priceTo) {
+            const from = session.priceFrom || 0;
+            lines.push(`💰 Цена: ${from} — ${session.priceTo || '∞'} BYN`);
+        }
+
+        const text = lines.length > 0
+            ? `📱 Мобильные телефоны\n\nТекущие фильтры:\n${lines.map(l => '• ' + l).join('\n')}\n\nВыберите или измените фильтры:`
+            : '📱 Мобильные телефоны\n\nФильтры не заданы (показаны все объявления).\nНажмите кнопку для настройки:';
+
+        const regionCount = countSelectedRegions(session);
+        const rows = [];
+
+        rows.push([Markup.button.callback(
+            `🏷 Бренд${session.brandName ? ': ' + session.brandName : ''}`,
+            'select_brand'
+        )]);
+
+        if (session.brand) {
+            rows.push([Markup.button.callback(
+                `📋 Модели (${session.models.length})`,
+                'select_model'
+            )]);
+        }
+
+        const rgnLabel = regionCount > 0 ? `📍 Регион (${regionCount})` : '📍 Регион';
+        rows.push([Markup.button.callback(rgnLabel, 'rgn_list')]);
+
+        const priceActive = session.priceFrom || session.priceTo;
+        const priceLabel = priceActive
+            ? `💰 Цена: ${session.priceFrom || 0}—${session.priceTo || '∞'}`
+            : '💰 Цена';
+        rows.push([Markup.button.callback(priceLabel, 'set_price')]);
+
+        rows.push([]);
+        rows.push([Markup.button.callback('✅ Построить URL и запустить', 'build_url')]);
+        rows.push([Markup.button.callback('🔄 Сбросить фильтры', 'reset_filters')]);
+        rows.push(menuBtn());
+
+        await ctx.reply(text, Markup.inlineKeyboard(rows));
+    }
+
+    function buildRegionSummary(session) {
+        if (!session.regions) return null;
+
+        const parts = [];
+        for (const [regionId, region] of Object.entries(session.regions)) {
+            const hasSelectedAreas = region.areas && Object.values(region.areas).some(a => a.selected);
+
+            if (region.selected) {
+                parts.push(region.name);
+            } else if (hasSelectedAreas) {
+                const areaNames = Object.values(region.areas)
+                    .filter(a => a.selected)
+                    .map(a => a.name);
+                if (areaNames.length > 0) {
+                    parts.push(`${region.name} (${areaNames.join(', ')})`);
+                }
+            }
+        }
+
+        return parts.length > 0 ? parts.join(', ') : null;
+    }
+
+    function countSelectedRegions(session) {
+        if (!session.regions) return 0;
+        let count = 0;
+        for (const region of Object.values(session.regions)) {
+            if (region.selected) {
+                count++;
+            } else if (region.areas) {
+                count += Object.values(region.areas).filter(a => a.selected).length;
+            }
+        }
+        return count;
+    }
+
+    // === Бренд ===
+
+    async function handleSelectBrand(ctx, chatId) {
+        const brands = await parser.getBrands();
+        if (brands.length === 0) {
+            ctx.reply('Не удалось загрузить бренды.', mainMenuKeyboardFor(chatId));
+            return;
+        }
+
+        const session = storage.getSession(chatId);
+        const rows = [];
+        for (const brand of brands) {
+            const prefix = session.brand === brand.id ? '✓ ' : '';
+            rows.push([Markup.button.callback(`${prefix}${brand.name}`, `brand:${brand.id}`)]);
+        }
+        rows.push(menuBtn());
+
+        await ctx.reply('🏷 Выберите бренд:', Markup.inlineKeyboard(rows));
+    }
+
+    async function handleBrandSelected(ctx, chatId, brandId) {
+        const brandIdNum = parseInt(brandId, 10);
+        const brands = await parser.getBrands();
+        const brand = brands.find(b => b.id === brandIdNum);
+        const session = storage.getSession(chatId);
+
+        if (session.brand === brandIdNum) {
+            session.brand = null;
+            session.brandName = null;
+            session.models = [];
+            session.modelNames = [];
         } else {
-            arr.push(value);
+            session.brand = brandIdNum;
+            session.brandName = brand ? brand.name : brandId;
+            session.models = [];
+            session.modelNames = [];
         }
 
-        if (arr.length === 0) delete session.selectedFilters[type];
-
-        const categoryUrl = `https://www.kufar.by/l/${session.selectedCategory}`;
-        const filters = await parser.getFilters(categoryUrl);
-        const keyboard = buildFilterKeyboard(filters, session.selectedFilters);
-
-        const summary = formatFilterSummary(session.selectedFilters);
-
-        await ctx.editMessageText(
-            `Категория: ${session.selectedCategory}\n\n` +
-            (summary ? `Выбрано:\n${summary}\n\n` : '') +
-            `Выберите фильтры:`,
-            keyboard
-        );
+        await sendFiltersSummary(ctx, chatId);
     }
 
-    async function handleFiltersDone(ctx, chatId) {
-        const session = storage.getSession(chatId);
+    // === Модели ===
 
-        if (!session.selectedCategory) {
-            await ctx.editMessageText('Сначала выберите категорию.', mainMenuKeyboard());
+    async function handleSelectModel(ctx, chatId) {
+        const session = storage.getSession(chatId);
+        if (!session.brand) {
+            ctx.reply('Сначала выберите бренд.', mainMenuKeyboardFor(chatId));
             return;
         }
 
-        const url = parser.buildUrl(session.selectedCategory, {
-            selected: session.selectedFilters,
-        });
+        const models = await parser.getModels(session.brand);
+        if (models.length === 0) {
+            ctx.reply('Нет моделей для этого бренда.', mainMenuKeyboardFor(chatId));
+            return;
+        }
 
+        const rows = [];
+        for (const model of models) {
+            const isSelected = session.models.includes(model.id);
+            const prefix = isSelected ? '✓ ' : '';
+            rows.push([Markup.button.callback(`${prefix}${model.name}`, `model:${model.id}`)]);
+        }
+        rows.push(menuBtn());
+
+        await ctx.reply('📋 Выберите модели (можно несколько):', Markup.inlineKeyboard(rows));
+    }
+
+    async function handleModelToggled(ctx, chatId, modelId) {
+        const modelIdNum = parseInt(modelId, 10);
+        const session = storage.getSession(chatId);
+        const models = await parser.getModels(session.brand);
+        const model = models.find(m => m.id === modelIdNum);
+
+        const idx = session.models.indexOf(modelIdNum);
+        if (idx >= 0) {
+            session.models.splice(idx, 1);
+            if (model) {
+                const nameIdx = session.modelNames.indexOf(model.name);
+                if (nameIdx >= 0) session.modelNames.splice(nameIdx, 1);
+            }
+        } else {
+            session.models.push(modelIdNum);
+            if (model) session.modelNames.push(model.name);
+        }
+
+        const rows = [];
+        for (const m of models) {
+            const isSelected = session.models.includes(m.id);
+            const prefix = isSelected ? '✓ ' : '';
+            rows.push([Markup.button.callback(`${prefix}${m.name}`, `model:${m.id}`)]);
+        }
+        rows.push(menuBtn());
+
+        await ctx.reply('📋 Выберите модели:', Markup.inlineKeyboard(rows));
+    }
+
+    // === Цена ===
+
+    async function handleSetPrice(ctx, chatId) {
+        const session = storage.getSession(chatId);
+        session.waitingFor = 'price_from';
+        ctx.reply(
+            '💰 Введите минимальную цену (в BYN):\n' +
+            'Или отправьте "0" для пропуска.'
+        );
+    }
+
+    // === Регионы ===
+
+    async function handleRegionList(ctx, chatId) {
+        const regions = parser.getRegions();
+        const session = storage.getSession(chatId);
+
+        if (!session.regions) session.regions = {};
+
+        const rows = [];
+        rows.push([Markup.button.callback('🌐 Вся Беларусь', 'rgn_all')]);
+
+        for (const rgn of regions) {
+            const regionState = session.regions[rgn.id];
+            const isWholeSelected = regionState?.selected;
+            const areasCount = regionState?.areas
+                ? Object.values(regionState.areas).filter(a => a.selected).length
+                : 0;
+
+            let label = rgn.name;
+            if (isWholeSelected) {
+                label = `✓ ${rgn.name} (вся область)`;
+            } else if (areasCount > 0) {
+                label = `${rgn.name} (${areasCount})`;
+            }
+
+            rows.push([Markup.button.callback(label, `rgn_cities:${rgn.id}`)]);
+        }
+
+        rows.push(menuBtn());
+
+        const summary = buildRegionSummary(session);
+        const text = summary
+            ? `📍 Выберите регион\n\nТекущий выбор: ${summary}\n\nНажмите на область для выбора городов:`
+            : '📍 Выберите регион:\n\nНажмите на область для выбора городов:';
+
+        await ctx.reply(text, Markup.inlineKeyboard(rows));
+    }
+
+    async function handleRegionCities(ctx, chatId, regionId) {
+        const regions = parser.getRegions();
+        const region = regions.find(r => r.id === regionId);
+        if (!region) return;
+
+        const areas = await parser.getAreas(regionId);
+        if (areas.length === 0) {
+            ctx.reply('Нет городов для этого региона.', mainMenuKeyboardFor(chatId));
+            return;
+        }
+
+        const session = storage.getSession(chatId);
+        if (!session.regions) session.regions = {};
+        if (!session.regions[regionId]) {
+            session.regions[regionId] = { name: region.name, selected: false, areas: {} };
+        }
+
+        const regionState = session.regions[regionId];
+
+        const rows = [];
+
+        const wholeLabel = regionState.selected
+            ? `✓ ${region.name} (вся область)`
+            : `${region.name} (вся область)`;
+        rows.push([Markup.button.callback(wholeLabel, `rgn_toggle:${regionId}`)]);
+
+        for (const area of areas) {
+            if (!regionState.areas[area.id]) {
+                regionState.areas[area.id] = { name: area.name, selected: false };
+            }
+            const isSelected = regionState.areas[area.id].selected;
+            const prefix = isSelected ? '✓ ' : '';
+            rows.push([Markup.button.callback(`${prefix}${area.name}`, `ar_toggle:${regionId}:${area.id}`)]);
+        }
+
+        rows.push([Markup.button.callback('← Назад к регионам', 'rgn_back')]);
+        rows.push(menuBtn());
+
+        const selectedAreas = Object.values(regionState.areas).filter(a => a.selected).map(a => a.name);
+        const text = selectedAreas.length > 0
+            ? `📍 ${region.name}\n\nВыбрано: ${selectedAreas.join(', ')}\n\nВыберите города:`
+            : `📍 ${region.name}\n\nВыберите города:`;
+
+        await ctx.reply(text, Markup.inlineKeyboard(rows));
+    }
+
+    async function handleRegionToggle(ctx, chatId, regionId) {
+        const regions = parser.getRegions();
+        const region = regions.find(r => r.id === regionId);
+        if (!region) return;
+
+        const session = storage.getSession(chatId);
+        if (!session.regions) session.regions = {};
+        if (!session.regions[regionId]) {
+            session.regions[regionId] = { name: region.name, selected: false, areas: {} };
+        }
+
+        const regionState = session.regions[regionId];
+        regionState.selected = !regionState.selected;
+
+        if (regionState.selected) {
+            for (const areaId of Object.keys(regionState.areas)) {
+                regionState.areas[areaId].selected = false;
+            }
+        }
+
+        await handleRegionCities(ctx, chatId, regionId);
+    }
+
+    async function handleAreaToggled(ctx, chatId, regionId, areaId) {
+        const regions = parser.getRegions();
+        const region = regions.find(r => r.id === regionId);
+        if (!region) return;
+
+        const session = storage.getSession(chatId);
+        if (!session.regions) session.regions = {};
+        if (!session.regions[regionId]) {
+            session.regions[regionId] = { name: region.name, selected: false, areas: {} };
+        }
+
+        const regionState = session.regions[regionId];
+        regionState.selected = false;
+
+        if (!regionState.areas[areaId]) {
+            const areas = await parser.getAreas(regionId);
+            const area = areas.find(a => a.id === areaId);
+            regionState.areas[areaId] = { name: area ? area.name : String(areaId), selected: false };
+        }
+
+        regionState.areas[areaId].selected = !regionState.areas[areaId].selected;
+
+        await handleRegionCities(ctx, chatId, regionId);
+    }
+
+    async function handleRegionAll(ctx, chatId) {
+        const session = storage.getSession(chatId);
+        session.regions = {};
+        await sendFiltersSummary(ctx, chatId);
+    }
+
+    // === Построение URL ===
+
+    async function handleBuildUrl(ctx, chatId) {
+        const session = storage.getSession(chatId);
+
+        const allAreas = [];
+        if (session.regions) {
+            for (const [regionId, region] of Object.entries(session.regions)) {
+                if (region.selected) {
+                    const areas = await parser.getAreas(parseInt(regionId, 10));
+                    for (const area of areas) {
+                        allAreas.push(area.id);
+                    }
+                } else if (region.areas) {
+                    for (const [areaId, area] of Object.entries(region.areas)) {
+                        if (area.selected) allAreas.push(parseInt(areaId, 10));
+                    }
+                }
+            }
+        }
+
+        const filters = {};
+        if (session.brand) filters.brand = session.brand;
+        if (session.models && session.models.length > 0) filters.models = session.models;
+        if (session.priceFrom) filters.priceFrom = session.priceFrom;
+        if (session.priceTo) filters.priceTo = session.priceTo;
+        if (allAreas.length > 0) filters.areas = allAreas;
+
+        const url = parser.buildUrl(filters);
         storage.updateUser(chatId, { url });
 
-        const summary = formatFilterSummary(session.selectedFilters);
+        const lines = [];
+        if (session.brandName) lines.push(`Бренд: ${session.brandName}`);
+        if (session.modelNames?.length) lines.push(`Модели: ${session.modelNames.join(', ')}`);
+        const regionSummary = buildRegionSummary(session);
+        if (regionSummary) lines.push(`Регион: ${regionSummary}`);
+        if (session.priceFrom || session.priceTo) lines.push(`Цена: ${session.priceFrom || 0} — ${session.priceTo || '∞'} BYN`);
 
-        await ctx.editMessageText(
-            `Готово! Ваш URL:\n${url}\n\n` +
-            (summary ? `Фильтры:\n${summary}\n\n` : '') +
-            `Запустить мониторинг?`,
-            Markup.inlineKeyboard([
-                [Markup.button.callback('Запустить мониторинг', 'start_monitoring')],
-                [Markup.button.callback('Изменить фильтры', `cat:${session.selectedCategory}`)],
-                [Markup.button.callback('← В меню', 'back_to_menu')],
-            ])
-        );
+        const text = '✅ URL сформирован!\n\n' +
+            (lines.length > 0 ? `Фильтры:\n${lines.map(l => '• ' + l).join('\n')}\n\n` : '') +
+            `URL:\n${url}`;
 
-        storage.resetSession(chatId);
+        await ctx.reply(text, Markup.inlineKeyboard([
+            [Markup.button.callback('▶️ Запустить мониторинг', 'start_monitoring')],
+            [Markup.button.callback('📱 Изменить фильтры', 'filters')],
+            menuBtn(),
+        ]));
     }
 
-    async function handleFiltersReset(ctx, chatId) {
-        const session = storage.getSession(chatId);
-        session.selectedFilters = {};
-
-        const categoryUrl = `https://www.kufar.by/l/${session.selectedCategory}`;
-        const filters = await parser.getFilters(categoryUrl);
-        const keyboard = buildFilterKeyboard(filters, {});
-
-        await ctx.editMessageText(
-            `Категория: ${session.selectedCategory}\n\nФильтры сброшены. Выберите заново:`,
-            keyboard
-        );
-    }
-
-    async function handleMonitoring(ctx, chatId) {
-        const user = storage.getUser(chatId);
-
-        if (!user) {
-            await ctx.reply('Сначала нажмите /start', mainMenuKeyboard());
-            return;
-        }
-
-        const statusText = user.monitoring
-            ? `Мониторинг активен.\nURL: ${user.url || 'не задан'}`
-            : `Мониторинг остановлен.\nURL: ${user.url || 'не задан'}`;
-
-        const buttons = [];
-        if (user.monitoring) {
-            buttons.push([Markup.button.callback('Остановить', 'stop_monitoring')]);
-        } else {
-            buttons.push([Markup.button.callback('Запустить', 'start_monitoring')]);
-        }
-        buttons.push([Markup.button.callback('← Назад', 'back_to_menu')]);
-
-        await ctx.editMessageText(statusText, Markup.inlineKeyboard(buttons));
-    }
+    // === Мониторинг ===
 
     async function handleStartMonitoring(ctx, chatId) {
         const user = storage.getUser(chatId);
 
         if (!user || !user.url) {
-            await ctx.reply(
-                'Сначала задайте URL через категории.',
-                mainMenuKeyboard()
+            ctx.reply(
+                '⚠️ Сначала задайте фильтры и постройте URL.',
+                mainMenuKeyboardFor(chatId)
             );
             return;
         }
 
         storage.updateUser(chatId, { monitoring: true });
 
-        await ctx.editMessageText(
-            `Мониторинг запущен!\nURL: ${user.url}\nПроверка каждые 10 секунд.`,
-            mainMenuKeyboard()
+        await ctx.reply(
+            `▶️ Мониторинг запущен!\n\nURL: ${user.url}\nПроверка каждые 10 секунд.\n` +
+            `Новые объявления будут приходить сюда.`,
+            mainMenuKeyboardFor(chatId)
         );
-    }
-
-    async function handleStopMonitoring(ctx, chatId) {
-        storage.updateUser(chatId, { monitoring: false });
-        await ctx.editMessageText('Мониторинг остановлен.', mainMenuKeyboard());
-    }
-
-    async function handleConfirmUrl(ctx, chatId) {
-        const user = storage.getUser(chatId);
-        if (!user || !user.url) return;
-
-        storage.updateUser(chatId, { monitoring: true });
-        await ctx.editMessageText(
-            `Мониторинг запущен!\nURL: ${user.url}`,
-            mainMenuKeyboard()
-        );
-    }
-
-    // === Вспомогательные функции ===
-
-    function mainMenuKeyboard() {
-        return Markup.inlineKeyboard([
-            [Markup.button.callback('Категории', 'categories')],
-            [Markup.button.callback('Мои фильтры', 'my_filters')],
-            [Markup.button.callback('Мониторинг', 'monitoring')],
-        ]);
-    }
-
-    function buildFilterKeyboard(filters, selected) {
-        const rows = [];
-
-        if (filters.brands && filters.brands.length > 0) {
-            rows.push([Markup.button.callback('--- Бренды ---', 'noop')]);
-            for (const brand of filters.brands) {
-                const isSelected = selected.brand && selected.brand.includes(brand.label);
-                const prefix = isSelected ? '✓ ' : '';
-                rows.push([
-                    Markup.button.callback(
-                        `${prefix}${brand.label}`,
-                        `filter:brand|${brand.label}`
-                    ),
-                ]);
-            }
-        }
-
-        if (rows.length > 0) {
-            rows.push([]);
-        }
-
-        rows.push([
-            Markup.button.callback('Готово', 'filters_done'),
-            Markup.button.callback('Сбросить', 'filters_reset'),
-        ]);
-        rows.push([Markup.button.callback('← К категориям', 'back_to_categories')]);
-
-        return Markup.inlineKeyboard(rows);
-    }
-
-    function formatFilterSummary(filters) {
-        const parts = [];
-        for (const [type, values] of Object.entries(filters)) {
-            if (Array.isArray(values) && values.length > 0) {
-                parts.push(`${type}: ${values.join(', ')}`);
-            }
-        }
-        return parts.join('\n');
     }
 
     return bot;

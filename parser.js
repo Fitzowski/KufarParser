@@ -3,140 +3,147 @@ const storage = require('./storage');
 let browser = null;
 let sharedPage = null;
 
+const CATEGORY_URL = 'https://www.kufar.by/l/mobilnye-telefony';
+
+const REGIONS = [
+    { id: 7, name: 'Минск', areaRef: '10676' },
+    { id: 1, name: 'Брестская область', areaRef: '10671' },
+    { id: 2, name: 'Гомельская область', areaRef: '10672' },
+    { id: 3, name: 'Гродненская область', areaRef: '10677' },
+    { id: 4, name: 'Могилёвская область', areaRef: '10673' },
+    { id: 5, name: 'Минская область', areaRef: '10674' },
+    { id: 6, name: 'Витебская область', areaRef: '10675' },
+];
+
 async function initParser(puppeteer) {
-    browser = await puppeteer.launch();
+    browser = await puppeteer.launch({ headless: true });
     sharedPage = await browser.newPage();
-    console.log('[Parser] Браузер для парсинга инициализирован.');
+    await sharedPage.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36');
+    console.log('[Parser] Браузер инициализирован.');
 }
 
-async function getBrowser() {
-    return browser;
-}
-
-async function parsePage(url) {
-    await sharedPage.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
-    return sharedPage;
-}
-
-// === Категории с главной страницы ===
-
-async function getCategories() {
-    const cached = storage.getCache('categories');
-    if (cached) return cached;
-
-    console.log('[Parser] Парсинг категорий с главной страницы...');
-    await sharedPage.goto('https://www.kufar.by', { waitUntil: 'networkidle2', timeout: 60000 });
-
-    const categories = await sharedPage.evaluate(() => {
-        const results = [];
-        // Kufar использует навигационное меню с ссылками на категории
-        const links = document.querySelectorAll('a[href*="/l/"]');
-        const seen = new Set();
-        for (const link of links) {
-            const href = link.getAttribute('href');
-            const text = link.innerText.trim();
-            if (!href || !text || seen.has(href)) continue;
-            // Только основные категории (один сегмент пути)
-            const match = href.match(/^\/l\/([a-z-]+)$/);
-            if (match) {
-                seen.add(href);
-                results.push({
-                    name: text,
-                    slug: match[1],
-                    url: `https://www.kufar.by${href}`,
-                });
-            }
-        }
-        return results;
-    });
-
-    if (categories.length > 0) {
-        storage.setCache('categories', categories);
-        console.log(`[Parser] Найдено ${categories.length} категорий.`);
+async function closeParser() {
+    if (browser) {
+        await browser.close().catch(() => {});
     }
-
-    return categories;
 }
 
-// === Фильтры для категории ===
+async function loadPageData(url) {
+    console.log(`[Parser] Загрузка: ${url}`);
+    await sharedPage.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
 
-async function getFilters(categoryUrl) {
-    const cacheKey = `filters_${Buffer.from(categoryUrl).toString('base64').slice(0, 40)}`;
+    return sharedPage.evaluate(() => {
+        const el = document.getElementById('__NEXT_DATA__');
+        if (!el) return null;
+        const json = JSON.parse(el.textContent);
+        const filters = json.props?.initialState?.filters;
+        if (!filters) return null;
+
+        const refs = filters.metadata?.parameters?.refs || {};
+        const currentFilters = filters.currentFilters || [];
+
+        return { currentFilters, refs };
+    });
+}
+
+async function getBrands() {
+    const cacheKey = 'brands';
     const cached = storage.getCache(cacheKey);
     if (cached) return cached;
 
-    console.log(`[Parser] Парсинг фильтров: ${categoryUrl}`);
-    await sharedPage.goto(categoryUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+    const data = await loadPageData(CATEGORY_URL);
+    if (!data) return [];
 
-    const filters = await sharedPage.evaluate(() => {
-        const result = {
-            brands: [],
-            models: [],
-            prices: {},
-            other: {},
-        };
+    const brandFilter = data.currentFilters.find(f => f.url_name === 'pb');
+    if (!brandFilter || !brandFilter.values) return [];
 
-        // Ищем фильтры в боковой панели
-        // Kufar обычно группирует фильтры в секции с заголовками
-        const filterSections = document.querySelectorAll('[class*="filter"], [class*="Filter"], [data-testid*="filter"]');
+    const brands = brandFilter.values.map(v => ({
+        id: parseInt(v.value, 10),
+        name: v.labels.ru,
+    }));
 
-        for (const section of filterSections) {
-            const title = section.querySelector('[class*="title"], [class*="label"], h3, h4');
-            const titleText = title ? title.innerText.trim().toLowerCase() : '';
-
-            const checkboxes = section.querySelectorAll('input[type="checkbox"], [class*="checkbox"], label');
-            const options = [];
-
-            for (const cb of checkboxes) {
-                const label = cb.closest('label') || cb;
-                const text = label ? label.innerText.trim() : '';
-                const value = cb.value || cb.getAttribute('data-value') || text;
-                if (text && text.length < 100) {
-                    options.push({ label: text, value });
-                }
-            }
-
-            if (titleText.includes('мар') || titleText.includes('brand') || titleText.includes('производител')) {
-                result.brands = options.slice(0, 30);
-            } else if (titleText.includes('модел') || titleText.includes('model')) {
-                result.models = options.slice(0, 50);
-            } else if (titleText.includes('цен') || titleText.includes('price')) {
-                const minInput = section.querySelector('input[placeholder*="от"], input[name*="min"]');
-                const maxInput = section.querySelector('input[placeholder*="до"], input[name*="max"]');
-                result.prices = {
-                    min: minInput ? minInput.placeholder : '',
-                    max: maxInput ? maxInput.placeholder : '',
-                };
-            }
-        }
-
-        // Альтернативный способ: ищем ссылки-фильтры
-        if (result.brands.length === 0) {
-            const filterLinks = document.querySelectorAll('a[href*="attr"], a[href*="brand"]');
-            const seen = new Set();
-            for (const link of filterLinks) {
-                const text = link.innerText.trim();
-                const href = link.getAttribute('href');
-                if (text && href && !seen.has(text) && text.length < 60) {
-                    seen.add(text);
-                    result.brands.push({ label: text, value: href });
-                }
-                if (result.brands.length >= 30) break;
-            }
-        }
-
-        return result;
-    });
-
-    if (filters.brands.length > 0 || filters.models.length > 0) {
-        storage.setCache(cacheKey, filters);
-        console.log(`[Parser] Фильтры: ${filters.brands.length} брендов, ${filters.models.length} моделей.`);
-    }
-
-    return filters;
+    storage.setCache(cacheKey, brands);
+    console.log(`[Parser] Загружено ${brands.length} брендов.`);
+    return brands;
 }
 
-// === Парсинг объявлений (существующая функция) ===
+async function getModels(brandId) {
+    const cacheKey = `models_${brandId}`;
+    const cached = storage.getCache(cacheKey);
+    if (cached) return cached;
+
+    const data = await loadPageData(`${CATEGORY_URL}?pb=${brandId}`);
+    if (!data) return [];
+
+    const modelFilter = data.currentFilters.find(f => f.url_name === 'phm');
+    if (!modelFilter || !modelFilter.values) return [];
+
+    const models = modelFilter.values.map(v => ({
+        id: parseInt(v.value, 10),
+        name: v.labels.ru,
+    }));
+
+    storage.setCache(cacheKey, models);
+    console.log(`[Parser] Загружено ${models.length} моделей для brand=${brandId}.`);
+    return models;
+}
+
+function getRegions() {
+    return REGIONS.map(r => ({ id: r.id, name: r.name }));
+}
+
+async function getAreas(regionId) {
+    const cacheKey = `areas_${regionId}`;
+    const cached = storage.getCache(cacheKey);
+    if (cached) return cached;
+
+    const region = REGIONS.find(r => r.id === regionId);
+    if (!region) return [];
+
+    const data = await loadPageData(CATEGORY_URL);
+    if (!data) return [];
+
+    const areaRef = data.refs[region.areaRef];
+    if (!areaRef || !areaRef.values) return [];
+
+    const areas = areaRef.values.map(v => ({
+        id: parseInt(v.value, 10),
+        name: v.labels.ru,
+    }));
+
+    storage.setCache(cacheKey, areas);
+    console.log(`[Parser] Загружено ${areas.length} городов для region=${regionId}.`);
+    return areas;
+}
+
+function buildUrl(filters) {
+    const params = [];
+
+    params.push('cat=17010');
+
+    if (filters.brand) params.push(`pb=${filters.brand}`);
+    if (filters.models && filters.models.length > 0) {
+        if (filters.models.length === 1) {
+            params.push(`phm=${filters.models[0]}`);
+        } else {
+            params.push(`phm=v.or:${filters.models.join(':')}`);
+        }
+    }
+    if (filters.priceFrom || filters.priceTo) {
+        const from = filters.priceFrom || 0;
+        const to = filters.priceTo || 1000000000;
+        params.push(`prc=${from}::${to}`);
+    }
+    if (filters.areas && filters.areas.length > 0) {
+        if (filters.areas.length === 1) {
+            params.push(`ar=${filters.areas[0]}`);
+        } else {
+            params.push(`ar=v.or:${filters.areas.join(':')}`);
+        }
+    }
+
+    return `${CATEGORY_URL}?${params.join('&')}`;
+}
 
 async function parseAds(url) {
     await sharedPage.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
@@ -159,43 +166,14 @@ async function parseAds(url) {
     });
 }
 
-// === Построение URL из фильтров ===
-
-function buildUrl(categorySlug, filters) {
-    let url = `https://www.kufar.by/l/${categorySlug}`;
-
-    const params = [];
-    if (filters.sort) params.push(`sort=${filters.sort}`);
-
-    const filterParts = [];
-    for (const [key, values] of Object.entries(filters.selected || {})) {
-        if (Array.isArray(values) && values.length > 0) {
-            for (const v of values) {
-                filterParts.push(`${key}=${encodeURIComponent(v)}`);
-            }
-        }
-    }
-
-    if (filterParts.length > 0 || params.length > 0) {
-        const allParams = [...params, ...filterParts];
-        url += '?' + allParams.join('&');
-    }
-
-    return url;
-}
-
-async function closeParser() {
-    if (browser) {
-        await browser.close().catch(() => {});
-    }
-}
-
 module.exports = {
     initParser,
-    getBrowser,
-    getCategories,
-    getFilters,
-    parseAds,
-    buildUrl,
     closeParser,
+    getBrands,
+    getModels,
+    getRegions,
+    getAreas,
+    buildUrl,
+    parseAds,
+    CATEGORY_URL,
 };

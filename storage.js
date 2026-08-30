@@ -5,7 +5,7 @@ const DATA_DIR = path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const CACHE_DIR = path.join(DATA_DIR, 'cache');
 const AD_TTL = 60 * 24 * 60 * 60 * 1000;
-const CACHE_TTL = 60 * 60 * 1000; // 1 час
+const CACHE_TTL = 60 * 60 * 1000;
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
@@ -27,8 +27,6 @@ function writeJSON(filePath, data) {
         console.error(`Ошибка записи ${filePath}: ${error.message}`);
     }
 }
-
-// === Users ===
 
 function getUsers() {
     return readJSON(USERS_FILE) || {};
@@ -66,8 +64,6 @@ function updateUser(chatId, data) {
     return users[id];
 }
 
-// === Ads ===
-
 function getAdsFilePath(chatId) {
     return path.join(DATA_DIR, `ads_${chatId}.json`);
 }
@@ -89,8 +85,6 @@ function saveAds(chatId, ads) {
     writeJSON(getAdsFilePath(chatId), ads);
 }
 
-// === Cache (categories, filters) ===
-
 function getCache(key) {
     const filePath = path.join(CACHE_DIR, `${key}.json`);
     const data = readJSON(filePath);
@@ -104,18 +98,26 @@ function setCache(key, payload) {
     writeJSON(filePath, { updatedAt: Date.now(), payload });
 }
 
-// === Sessions (per-user filter selection state) ===
-
 const sessions = {};
+
+function createDefaultSession() {
+    return {
+        brand: null,
+        brandName: null,
+        models: [],
+        modelNames: [],
+        priceFrom: null,
+        priceTo: null,
+        waitingFor: null,
+        regions: {},
+        regionView: null,
+    };
+}
 
 function getSession(chatId) {
     const id = String(chatId);
     if (!sessions[id]) {
-        sessions[id] = {
-            selectedCategory: null,
-            selectedFilters: {},
-            step: 'menu',
-        };
+        sessions[id] = createDefaultSession();
     }
     return sessions[id];
 }
@@ -129,11 +131,7 @@ function updateSession(chatId, data) {
 
 function resetSession(chatId) {
     const id = String(chatId);
-    sessions[id] = {
-        selectedCategory: null,
-        selectedFilters: {},
-        step: 'menu',
-    };
+    sessions[id] = createDefaultSession();
     return sessions[id];
 }
 

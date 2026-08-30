@@ -646,8 +646,7 @@ function createBot(token) {
         storage.updateUser(chatId, { monitoring: true, monitoring_started_at: Date.now() });
 
         await ctx.reply(
-            `▶️ Мониторинг запущен!\n\nURL: ${url}\nПроверка каждые 10 секунд.\n` +
-            `Кэш очищен — будут приходить только новые объявления.`,
+            `▶️ Мониторинг запущен!\n\nURL: ${url}\nПроверка каждые 10 секунд.`,
             mainMenuKeyboardFor(chatId)
         );
     }

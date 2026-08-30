@@ -8,6 +8,60 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 let activeBot = null;
 
+function parseRelativeTime(timeStr) {
+    if (!timeStr) return null;
+
+    const now = new Date();
+    const lower = timeStr.toLowerCase().trim();
+
+    const todayMatch = lower.match(/сегодня[,]?\s*(\d{1,2}):(\d{2})/);
+    if (todayMatch) {
+        const d = new Date(now);
+        d.setHours(parseInt(todayMatch[1], 10), parseInt(todayMatch[2], 10), 0, 0);
+        return d;
+    }
+
+    const yesterdayMatch = lower.match(/вчера[,]?\s*(\d{1,2}):(\d{2})/);
+    if (yesterdayMatch) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - 1);
+        d.setHours(parseInt(yesterdayMatch[1], 10), parseInt(yesterdayMatch[2], 10), 0, 0);
+        return d;
+    }
+
+    const daysMatch = lower.match(/(\d+)\s*дн/);
+    if (daysMatch) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - parseInt(daysMatch[1], 10));
+        return d;
+    }
+
+    const hoursMatch = lower.match(/(\d+)\s*час/);
+    if (hoursMatch) {
+        const d = new Date(now);
+        d.setHours(d.getHours() - parseInt(hoursMatch[1], 10));
+        return d;
+    }
+
+    const minsMatch = lower.match(/(\d+)\s*мин/);
+    if (minsMatch) {
+        const d = new Date(now);
+        d.setMinutes(d.getMinutes() - parseInt(minsMatch[1], 10));
+        return d;
+    }
+
+    return null;
+}
+
+function isAdNewerThan(adTime, monitoringStartedAt) {
+    if (!monitoringStartedAt) return true;
+
+    const adDate = parseRelativeTime(adTime);
+    if (!adDate) return true;
+
+    return adDate.getTime() >= monitoringStartedAt;
+}
+
 async function sendNotification(bot, chatId, message) {
     try {
         await bot.telegram.sendMessage(chatId, message);
@@ -40,7 +94,10 @@ async function checkUser(bot, chatId, user) {
             return;
         }
 
-        const newEntries = ads.filter(ad => !knownAds[ad.id]);
+        const newEntries = ads.filter(ad => {
+            if (knownAds[ad.id]) return false;
+            return isAdNewerThan(ad.time, user.monitoring_started_at);
+        });
 
         if (newEntries.length > 0) {
             for (const ad of newEntries) {
@@ -90,26 +147,24 @@ async function checkAllUsers(bot) {
 async function main() {
     console.log(`[${new Date().toISOString()}] Запуск KufarParser...`);
 
-    // Инициализация браузера для парсинга
     await parser.initParser(puppeteer);
 
-    // Инициализация Telegram-бота
     const bot = createBot(TELEGRAM_BOT_TOKEN);
     activeBot = bot;
     bot.launch();
     console.log('[Bot] Telegram-бот запущен.');
 
-    // Очистка кэша при перезапуске — чтобы не спамить старыми объявлениями
     const users = storage.getUsers();
     for (const chatId of Object.keys(users)) {
         storage.clearAds(chatId);
+        if (users[chatId].monitoring) {
+            storage.updateUser(chatId, { monitoring_started_at: Date.now() });
+        }
     }
-    console.log('[Parser] Кэш объявлений очищен.');
+    console.log('[Parser] Кэш объявлений очищен, monitoring_started_at обновлён.');
 
-    // Первый запуск проверки
     await checkAllUsers(bot);
 
-    // Проверка каждые 10 секунд
     setInterval(() => checkAllUsers(bot), 10 * 1000);
     console.log(`[${new Date().toISOString()}] Мониторинг запущен. Используйте /menu в Telegram.`);
 }

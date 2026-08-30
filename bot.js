@@ -610,7 +610,7 @@ function createBot(token) {
         }
 
         storage.clearAds(chatId);
-        storage.updateUser(chatId, { monitoring: true });
+        storage.updateUser(chatId, { monitoring: true, monitoring_started_at: Date.now() });
 
         await ctx.reply(
             `▶️ Мониторинг запущен!\n\nURL: ${user.url}\nПроверка каждые 10 секунд.\n` +

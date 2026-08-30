@@ -159,6 +159,7 @@ function createBot(token) {
 
             if (data === 'reset_filters') {
                 storage.resetSession(chatId);
+                storage.updateUser(chatId, { url: '', monitoring: false });
                 await sendFiltersSummary(ctx, chatId);
                 return;
             }
@@ -216,6 +217,7 @@ function createBot(token) {
 
     async function sendFiltersSummary(ctx, chatId) {
         const session = storage.getSession(chatId);
+        const user = storage.getUser(chatId);
         const lines = [];
 
         if (session.brandName) lines.push(`📱 Бренд: ${session.brandName}`);
@@ -231,9 +233,17 @@ function createBot(token) {
             lines.push(`💰 Цена: ${from} — ${session.priceTo || '∞'} BYN`);
         }
 
-        const text = lines.length > 0
-            ? `📱 Мобильные телефоны\n\nТекущие фильтры:\n${lines.map(l => '• ' + l).join('\n')}\n\nВыберите или измените фильтры:`
-            : '📱 Мобильные телефоны\n\nФильтры не заданы (показаны все объявления).\nНажмите кнопку для настройки:';
+        const hasActiveFilters = lines.length > 0;
+        const hasStoredUrl = user && user.url;
+
+        let text;
+        if (hasActiveFilters) {
+            text = `📱 Мобильные телефоны\n\nТекущие фильтры:\n${lines.map(l => '• ' + l).join('\n')}\n\nВыберите или измените фильтры:`;
+        } else if (hasStoredUrl) {
+            text = `📱 Мобильные телефоны\n\nТекущий URL:\n${user.url}\n\nФильтры настроены через URL. Нажмите кнопку для изменения:`;
+        } else {
+            text = '📱 Мобильные телефоны\n\nФильтры не заданы (показаны все объявления).\nНажмите кнопку для настройки:';
+        }
 
         const regionCount = countSelectedRegions(session);
         const rows = [];

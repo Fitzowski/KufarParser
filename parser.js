@@ -151,7 +151,9 @@ async function parseAds(url) {
         return Array.from(document.querySelectorAll('[class^="styles_wrapper_"]')).map(wrapper => {
             const titleElement = wrapper.querySelector('[class^="styles_title_"]');
             const priceElement = wrapper.querySelector('[class^="styles_price_"]');
-            const timeElement = wrapper.querySelector('[class^="styles_secondary_"]');
+            const secondaryEl = wrapper.querySelector('[class^="styles_secondary_"]');
+            const regionEl = secondaryEl ? secondaryEl.querySelector('[class*="region"]') : null;
+            const timeEl = secondaryEl ? secondaryEl.querySelector('span') : null;
             const linkElement = wrapper.closest('a');
             const link = linkElement ? linkElement.href : null;
             const idMatch = link ? link.match(/\/item\/(\d+)/) : null;
@@ -159,7 +161,8 @@ async function parseAds(url) {
                 id: idMatch ? idMatch[1] : null,
                 title: titleElement ? titleElement.innerText.trim() : null,
                 price: priceElement ? priceElement.innerText.trim() : null,
-                time: timeElement ? timeElement.innerText.trim() : null,
+                location: regionEl ? regionEl.innerText.trim() : null,
+                time: timeEl ? timeEl.innerText.trim() : null,
                 link: link,
             };
         }).filter(ad => ad.id && ad.title && ad.link && ad.price);

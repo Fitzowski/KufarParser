@@ -28,6 +28,7 @@ async function checkUser(bot, chatId, user) {
                 knownAds[ad.id] = {
                     title: ad.title,
                     price: ad.price,
+                    location: ad.location,
                     time: ad.time,
                     link: ad.link,
                     sent_at: Date.now(),
@@ -43,11 +44,23 @@ async function checkUser(bot, chatId, user) {
 
         if (newEntries.length > 0) {
             for (const ad of newEntries) {
-                const message = `Новое объявление:\n- ${ad.title} (${ad.price})\n- Время: ${ad.time}\n- Ссылка: ${ad.link}`;
-                await sendNotification(bot, chatId, message);
+                const lines = [];
+                lines.push(`📱 Новое объявление`);
+                lines.push(``);
+                lines.push(`Название публикации: ${ad.title}`);
+                lines.push(`Цена: ${ad.price}`);
+                if (ad.location) lines.push(`Регион: ${ad.location}`);
+                if (ad.time) lines.push(`Время: ${ad.time}`);
+                lines.push(``);
+                lines.push(`Ссылка: ${ad.link}`);
+                lines.push(``);
+                lines.push(`/menu — главное меню`);
+
+                await sendNotification(bot, chatId, lines.join('\n'));
                 knownAds[ad.id] = {
                     title: ad.title,
                     price: ad.price,
+                    location: ad.location,
                     time: ad.time,
                     link: ad.link,
                     sent_at: Date.now(),

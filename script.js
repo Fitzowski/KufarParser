@@ -50,6 +50,35 @@ function parseRelativeTime(timeStr) {
         return d;
     }
 
+    const months = {
+        'янв': 0, 'фев': 1, 'мар': 2, 'апр': 3, 'май': 4, 'мая': 4,
+        'июн': 5, 'июл': 6, 'авг': 7, 'сен': 8, 'окт': 9, 'ноя': 10, 'дек': 11
+    };
+
+    const absMatch = lower.match(/(\d{1,2})\s+(янв|фев|мар|апр|май|мая|июн|июл|авг|сен|окт|ноя|дек)[.,]?\s*(\d{1,2}):(\d{2})/);
+    if (absMatch) {
+        const day = parseInt(absMatch[1], 10);
+        const month = months[absMatch[2]];
+        const hour = parseInt(absMatch[3], 10);
+        const min = parseInt(absMatch[4], 10);
+        if (month !== undefined) {
+            const d = new Date(now.getFullYear(), month, day, hour, min, 0, 0);
+            if (d > now) d.setFullYear(d.getFullYear() - 1);
+            return d;
+        }
+    }
+
+    const absMatchNoTime = lower.match(/(\d{1,2})\s+(янв|фев|мар|апр|май|мая|июн|июл|авг|сен|окт|ноя|дек)/);
+    if (absMatchNoTime) {
+        const day = parseInt(absMatchNoTime[1], 10);
+        const month = months[absMatchNoTime[2]];
+        if (month !== undefined) {
+            const d = new Date(now.getFullYear(), month, day, 12, 0, 0, 0);
+            if (d > now) d.setFullYear(d.getFullYear() - 1);
+            return d;
+        }
+    }
+
     return null;
 }
 
@@ -57,7 +86,7 @@ function isAdNewerThan(adTime, monitoringStartedAt) {
     if (!monitoringStartedAt) return true;
 
     const adDate = parseRelativeTime(adTime);
-    if (!adDate) return true;
+    if (!adDate) return false;
 
     return adDate.getTime() >= monitoringStartedAt;
 }

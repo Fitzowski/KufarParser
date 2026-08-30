@@ -610,20 +610,43 @@ function createBot(token) {
 
     async function handleStartMonitoring(ctx, chatId) {
         const user = storage.getUser(chatId);
+        const session = storage.getSession(chatId);
 
-        if (!user || !user.url) {
-            ctx.reply(
-                '⚠️ Сначала задайте фильтры и постройте URL.',
-                mainMenuKeyboardFor(chatId)
-            );
-            return;
+        let url = user?.url;
+
+        if (!url) {
+            const allAreas = [];
+            if (session.regions) {
+                for (const [regionId, region] of Object.entries(session.regions)) {
+                    if (region.selected) {
+                        const areas = await parser.getAreas(parseInt(regionId, 10));
+                        for (const area of areas) {
+                            allAreas.push(area.id);
+                        }
+                    } else if (region.areas) {
+                        for (const [areaId, area] of Object.entries(region.areas)) {
+                            if (area.selected) allAreas.push(parseInt(areaId, 10));
+                        }
+                    }
+                }
+            }
+
+            const filters = {};
+            if (session.brand) filters.brand = session.brand;
+            if (session.models && session.models.length > 0) filters.models = session.models;
+            if (session.priceFrom) filters.priceFrom = session.priceFrom;
+            if (session.priceTo) filters.priceTo = session.priceTo;
+            if (allAreas.length > 0) filters.areas = allAreas;
+
+            url = parser.buildUrl(filters);
+            storage.updateUser(chatId, { url });
         }
 
         storage.clearAds(chatId);
         storage.updateUser(chatId, { monitoring: true, monitoring_started_at: Date.now() });
 
         await ctx.reply(
-            `▶️ Мониторинг запущен!\n\nURL: ${user.url}\nПроверка каждые 10 секунд.\n` +
+            `▶️ Мониторинг запущен!\n\nURL: ${url}\nПроверка каждые 10 секунд.\n` +
             `Кэш очищен — будут приходить только новые объявления.`,
             mainMenuKeyboardFor(chatId)
         );

@@ -1,0 +1,6 @@
+# .gitignore
+.env
+data/
+node_modules/
+.idea/
+ads.json

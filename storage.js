@@ -85,6 +85,13 @@ function saveAds(chatId, ads) {
     writeJSON(getAdsFilePath(chatId), ads);
 }
 
+function clearAds(chatId) {
+    const filePath = getAdsFilePath(chatId);
+    if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+    }
+}
+
 function getCache(key) {
     const filePath = path.join(CACHE_DIR, `${key}.json`);
     const data = readJSON(filePath);
@@ -143,6 +150,7 @@ module.exports = {
     updateUser,
     loadAds,
     saveAds,
+    clearAds,
     getCache,
     setCache,
     getSession,

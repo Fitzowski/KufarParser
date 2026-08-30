@@ -22,8 +22,9 @@ async function checkUser(bot, chatId, user) {
     try {
         const ads = await parser.parseAds(user.url);
         const knownAds = storage.loadAds(chatId);
+        const isFirstRun = Object.keys(knownAds).length === 0;
 
-        if (Object.keys(knownAds).length === 0) {
+        if (isFirstRun) {
             for (const ad of ads) {
                 knownAds[ad.id] = {
                     title: ad.title,
@@ -35,8 +36,7 @@ async function checkUser(bot, chatId, user) {
                 };
             }
             storage.saveAds(chatId, knownAds);
-            await sendNotification(bot, chatId, `Кэш инициализирован: ${ads.length} объявлений.`);
-            console.log(`[Parser] Пользователь ${chatId}: инициализировано ${ads.length} объявлений`);
+            console.log(`[Parser] Пользователь ${chatId}: кэш инициализирован (${ads.length} объявлений), уведомления не отправляются`);
             return;
         }
 
@@ -98,6 +98,13 @@ async function main() {
     activeBot = bot;
     bot.launch();
     console.log('[Bot] Telegram-бот запущен.');
+
+    // Очистка кэша при перезапуске — чтобы не спамить старыми объявлениями
+    const users = storage.getUsers();
+    for (const chatId of Object.keys(users)) {
+        storage.clearAds(chatId);
+    }
+    console.log('[Parser] Кэш объявлений очищен.');
 
     // Первый запуск проверки
     await checkAllUsers(bot);

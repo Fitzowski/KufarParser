@@ -609,11 +609,12 @@ function createBot(token) {
             return;
         }
 
+        storage.clearAds(chatId);
         storage.updateUser(chatId, { monitoring: true });
 
         await ctx.reply(
             `▶️ Мониторинг запущен!\n\nURL: ${user.url}\nПроверка каждые 10 секунд.\n` +
-            `Новые объявления будут приходить сюда.`,
+            `Кэш очищен — будут приходить только новые объявления.`,
             mainMenuKeyboardFor(chatId)
         );
     }

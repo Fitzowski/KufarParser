@@ -62,6 +62,32 @@ function isAdNewerThan(adTime, monitoringStartedAt) {
     return adDate.getTime() >= monitoringStartedAt;
 }
 
+function formatAdTime(timeStr) {
+    if (!timeStr) return null;
+
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = now.getFullYear();
+    const todayStr = `${day}.${month}.${year}`;
+
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yDay = String(yesterday.getDate()).padStart(2, '0');
+    const yMonth = String(yesterday.getMonth() + 1).padStart(2, '0');
+    const yYear = yesterday.getFullYear();
+    const yesterdayStr = `${yDay}.${yMonth}.${yYear}`;
+
+    if (timeStr.includes('Сегодня')) {
+        return timeStr.replace('Сегодня', `Сегодня (${todayStr})`);
+    }
+    if (timeStr.includes('Вчера')) {
+        return timeStr.replace('Вчера', `Вчера (${yesterdayStr})`);
+    }
+
+    return timeStr;
+}
+
 async function sendNotification(bot, chatId, message) {
     try {
         await bot.telegram.sendMessage(chatId, message);
@@ -107,7 +133,7 @@ async function checkUser(bot, chatId, user) {
                 lines.push(`Название публикации: ${ad.title}`);
                 lines.push(`Цена: ${ad.price}`);
                 if (ad.location) lines.push(`Регион: ${ad.location}`);
-                if (ad.time) lines.push(`Время: ${ad.time}`);
+                if (ad.time) lines.push(`Время: ${formatAdTime(ad.time)}`);
                 lines.push(``);
                 lines.push(`Ссылка: ${ad.link}`);
                 lines.push(``);

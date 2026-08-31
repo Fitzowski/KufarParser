@@ -125,11 +125,21 @@ async function sendNotification(bot, chatId, message) {
     }
 }
 
+function getRegionNameFromUrl(url) {
+    const rgnMatch = url.match(/rgn=(\d)/);
+    if (rgnMatch) {
+        const rgnToName = { '1': 'Брест', '2': 'Гомель', '3': 'Гродно', '4': 'Могилев', '5': 'Минская', '6': 'Витебск', '7': 'Минск' };
+        return rgnToName[rgnMatch[1]] || null;
+    }
+    return null;
+}
+
 async function checkUser(bot, chatId, user) {
     if (!user.monitoring || !user.url) return;
 
     try {
-        const ads = await parser.parseAds(user.url);
+        const regionName = getRegionNameFromUrl(user.url);
+        const ads = await parser.parseAds(user.url, regionName);
         const knownAds = storage.loadAds(chatId);
         const isFirstRun = Object.keys(knownAds).length === 0;
 

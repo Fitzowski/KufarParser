@@ -148,9 +148,9 @@ function getRegionRgn(regionId) {
     return region ? region.rgn : null;
 }
 
-async function parseAds(url) {
+async function parseAds(url, regionName) {
     await sharedPage.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
-    return sharedPage.evaluate(() => {
+    const ads = await sharedPage.evaluate(() => {
         return Array.from(document.querySelectorAll('[class^="styles_wrapper_"]')).map(wrapper => {
             const titleElement = wrapper.querySelector('[class^="styles_title_"]');
             const priceElement = wrapper.querySelector('[class^="styles_price_"]');
@@ -169,6 +169,15 @@ async function parseAds(url) {
                 link: link,
             };
         }).filter(ad => ad.id && ad.title && ad.link && ad.price);
+    });
+
+    if (!regionName) return ads;
+
+    return ads.filter(ad => {
+        if (!ad.location) return false;
+        const loc = ad.location.toLowerCase();
+        const region = regionName.toLowerCase();
+        return loc.includes(region);
     });
 }
 

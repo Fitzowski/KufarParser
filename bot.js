@@ -562,28 +562,38 @@ function createBot(token) {
     async function handleBuildUrl(ctx, chatId) {
         const session = storage.getSession(chatId);
 
-        const allAreas = [];
-        if (session.regions) {
-            for (const [regionId, region] of Object.entries(session.regions)) {
-                if (region.selected) {
-                    const areas = await parser.getAreas(parseInt(regionId, 10));
-                    for (const area of areas) {
-                        allAreas.push(area.id);
-                    }
-                } else if (region.areas) {
-                    for (const [areaId, area] of Object.entries(region.areas)) {
-                        if (area.selected) allAreas.push(parseInt(areaId, 10));
-                    }
-                }
-            }
-        }
-
         const filters = {};
         if (session.brand) filters.brand = session.brand;
         if (session.models && session.models.length > 0) filters.models = session.models;
         if (session.priceFrom) filters.priceFrom = session.priceFrom;
         if (session.priceTo) filters.priceTo = session.priceTo;
-        if (allAreas.length > 0) filters.areas = allAreas;
+
+        if (session.regions) {
+            let selectedRegion = null;
+            let selectedArea = null;
+
+            for (const [regionId, region] of Object.entries(session.regions)) {
+                if (region.selected) {
+                    selectedRegion = parseInt(regionId, 10);
+                    break;
+                }
+                if (region.areas) {
+                    for (const [areaId, area] of Object.entries(region.areas)) {
+                        if (area.selected) {
+                            selectedArea = parseInt(areaId, 10);
+                            break;
+                        }
+                    }
+                    if (selectedArea) break;
+                }
+            }
+
+            if (selectedRegion) {
+                filters.region = parser.getRegionRgn(selectedRegion);
+            } else if (selectedArea) {
+                filters.area = selectedArea;
+            }
+        }
 
         const url = parser.buildUrl(filters);
         storage.updateUser(chatId, { url });
@@ -615,28 +625,38 @@ function createBot(token) {
         let url = user?.url;
 
         if (!url) {
-            const allAreas = [];
-            if (session.regions) {
-                for (const [regionId, region] of Object.entries(session.regions)) {
-                    if (region.selected) {
-                        const areas = await parser.getAreas(parseInt(regionId, 10));
-                        for (const area of areas) {
-                            allAreas.push(area.id);
-                        }
-                    } else if (region.areas) {
-                        for (const [areaId, area] of Object.entries(region.areas)) {
-                            if (area.selected) allAreas.push(parseInt(areaId, 10));
-                        }
-                    }
-                }
-            }
-
             const filters = {};
             if (session.brand) filters.brand = session.brand;
             if (session.models && session.models.length > 0) filters.models = session.models;
             if (session.priceFrom) filters.priceFrom = session.priceFrom;
             if (session.priceTo) filters.priceTo = session.priceTo;
-            if (allAreas.length > 0) filters.areas = allAreas;
+
+            if (session.regions) {
+                let selectedRegion = null;
+                let selectedArea = null;
+
+                for (const [regionId, region] of Object.entries(session.regions)) {
+                    if (region.selected) {
+                        selectedRegion = parseInt(regionId, 10);
+                        break;
+                    }
+                    if (region.areas) {
+                        for (const [areaId, area] of Object.entries(region.areas)) {
+                            if (area.selected) {
+                                selectedArea = parseInt(areaId, 10);
+                                break;
+                            }
+                        }
+                        if (selectedArea) break;
+                    }
+                }
+
+                if (selectedRegion) {
+                    filters.region = parser.getRegionRgn(selectedRegion);
+                } else if (selectedArea) {
+                    filters.area = selectedArea;
+                }
+            }
 
             url = parser.buildUrl(filters);
             storage.updateUser(chatId, { url });

@@ -6,13 +6,13 @@ let sharedPage = null;
 const CATEGORY_URL = 'https://www.kufar.by/l/mobilnye-telefony';
 
 const REGIONS = [
-    { id: 7, name: 'Минск', areaRef: '10676' },
-    { id: 1, name: 'Брестская область', areaRef: '10671' },
-    { id: 2, name: 'Гомельская область', areaRef: '10672' },
-    { id: 3, name: 'Гродненская область', areaRef: '10677' },
-    { id: 4, name: 'Могилёвская область', areaRef: '10673' },
-    { id: 5, name: 'Минская область', areaRef: '10674' },
-    { id: 6, name: 'Витебская область', areaRef: '10675' },
+    { id: 7, name: 'Минск', rgn: '7', areaRef: '10676' },
+    { id: 1, name: 'Брестская область', rgn: '1', areaRef: '10671' },
+    { id: 2, name: 'Гомельская область', rgn: '2', areaRef: '10672' },
+    { id: 3, name: 'Гродненская область', rgn: '3', areaRef: '10677' },
+    { id: 4, name: 'Могилёвская область', rgn: '4', areaRef: '10673' },
+    { id: 5, name: 'Минская область', rgn: '5', areaRef: '10674' },
+    { id: 6, name: 'Витебская область', rgn: '6', areaRef: '10675' },
 ];
 
 async function initParser(puppeteer) {
@@ -134,15 +134,18 @@ function buildUrl(filters) {
         const to = filters.priceTo || 1000000000;
         params.push(`prc=${from}::${to}`);
     }
-    if (filters.areas && filters.areas.length > 0) {
-        if (filters.areas.length === 1) {
-            params.push(`ar=${filters.areas[0]}`);
-        } else {
-            params.push(`ar=v.or:${filters.areas.join(':')}`);
-        }
+    if (filters.region) {
+        params.push(`rgn=${filters.region}`);
+    } else if (filters.area) {
+        params.push(`ar=${filters.area}`);
     }
 
     return `${CATEGORY_URL}?${params.join('&')}`;
+}
+
+function getRegionRgn(regionId) {
+    const region = REGIONS.find(r => r.id === regionId);
+    return region ? region.rgn : null;
 }
 
 async function parseAds(url) {
@@ -177,6 +180,8 @@ module.exports = {
     getRegions,
     getAreas,
     buildUrl,
+    getRegionRgn,
     parseAds,
     CATEGORY_URL,
+    REGIONS,
 };
